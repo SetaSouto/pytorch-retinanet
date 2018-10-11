@@ -1,17 +1,14 @@
-import torch.nn as nn
-import torch
 import math
 import time
-import torch.utils.model_zoo as model_zoo
-from utils import BasicBlock, Bottleneck, BBoxTransform, ClipBoxes
-from anchors import Anchors
-import losses
-from lib.nms.pth_nms import pth_nms
 
-def nms(dets, thresh):
-    "Dispatch to either CPU or GPU NMS implementations.\
-    Accept dets as tensor"""
-    return pth_nms(dets, thresh)
+import torch
+import torch.nn as nn
+import torch.utils.model_zoo as model_zoo
+
+import losses
+from anchors import Anchors
+from nms import nms
+from utils import BasicBlock, BBoxTransform, Bottleneck, ClipBoxes
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
@@ -252,6 +249,7 @@ class ResNet(nn.Module):
 
         regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1)
 
+        # Classification has shape (batch size, total number of anchors, number of classes)
         classification = torch.cat([self.classificationModel(feature) for feature in features], dim=1)
 
         anchors = self.anchors(img_batch)
@@ -262,18 +260,24 @@ class ResNet(nn.Module):
             transformed_anchors = self.regressBoxes(anchors, regression)
             transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)
 
+            # Get the max score for each anchor, remember that the dim 2 has the score for each class
             scores = torch.max(classification, dim=2, keepdim=True)[0]
 
+            # While evaluating, the batch size is 1, so we get a tensor with a single dimension that contains
+            # all the scores
             scores_over_thresh = (scores>0.05)[0, :, 0]
 
             if scores_over_thresh.sum() == 0:
                 # no boxes to NMS, just return
                 return [torch.zeros(0), torch.zeros(0), torch.zeros(0, 4)]
 
+            # Keep only the anchors with score over threshold
             classification = classification[:, scores_over_thresh, :]
             transformed_anchors = transformed_anchors[:, scores_over_thresh, :]
             scores = scores[:, scores_over_thresh, :]
 
+            # Apply Non-Maximum Suppression to tensor with shape (number of anchors, 4 + 1)
+            # It returns the index of the anchors to keep
             anchors_nms_idx = nms(torch.cat([transformed_anchors, scores], dim=2)[0, :, :], 0.5)
 
             nms_scores, nms_class = classification[0, anchors_nms_idx, :].max(dim=1)

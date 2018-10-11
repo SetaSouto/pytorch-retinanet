@@ -9,11 +9,13 @@ import argparse
 
 import sys
 import cv2
+import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, models, transforms
 
+import model
 from dataloader import CocoDataset, CSVDataset, collater, Resizer, AspectRatioBasedSampler, Augmenter, UnNormalizer, Normalizer
 
 
@@ -24,7 +26,6 @@ print('CUDA available: {}'.format(torch.cuda.is_available()))
 
 def main(args=None):
 	parser = argparse.ArgumentParser(description='Simple training script for training a RetinaNet network.')
-
 	parser.add_argument('--dataset', help='Dataset type, must be one of csv or coco.')
 	parser.add_argument('--coco_path', help='Path to COCO directory')
 	parser.add_argument('--csv_classes', help='Path to file containing class list (see readme)')
@@ -35,16 +36,18 @@ def main(args=None):
 	parser = parser.parse_args(args)
 
 	if parser.dataset == 'coco':
-		dataset_val = CocoDataset(parser.coco_path, set_name='val2017', transform=transforms.Compose([Normalizer(), Resizer()]))
+		dataset_val = CocoDataset(parser.coco_path, set_name='val2014', transform=transforms.Compose([Normalizer(), Resizer()]))
 	elif parser.dataset == 'csv':
 		dataset_val = CSVDataset(train_file=parser.csv_train, class_list=parser.csv_classes, transform=transforms.Compose([Normalizer(), Resizer()]))
 	else:
 		raise ValueError('Dataset type not understood (must be csv or coco), exiting.')
 
 	sampler_val = AspectRatioBasedSampler(dataset_val, batch_size=1, drop_last=False)
-	dataloader_val = DataLoader(dataset_val, num_workers=1, collate_fn=collater, batch_sampler=sampler_val)
+	dataloader_val = DataLoader(dataset_val, num_workers=1, collate_fn=collater) #, batch_sampler=sampler_val)
 
-	retinanet = torch.load(parser.model)
+	# retinanet = torch.load(parser.model)
+	retinanet = model.resnet50(num_classes=80)
+	retinanet.load_state_dict(torch.load(parser.model))
 
 	use_gpu = True
 
@@ -87,10 +90,12 @@ def main(args=None):
 				draw_caption(img, (x1, y1, x2, y2), label_name)
 
 				cv2.rectangle(img, (x1, y1), (x2, y2), color=(0, 0, 255), thickness=2)
-				print(label_name)
+				# print(label_name)
 
-			cv2.imshow('img', img)
-			cv2.waitKey(0)
+			# cv2.imshow('img', img)
+			plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+			plt.show()
+			# cv2.waitKey(0)
 
 
 
