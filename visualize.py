@@ -43,7 +43,7 @@ def main(args=None):
 		raise ValueError('Dataset type not understood (must be csv or coco), exiting.')
 
 	sampler_val = AspectRatioBasedSampler(dataset_val, batch_size=1, drop_last=False)
-	dataloader_val = DataLoader(dataset_val, num_workers=1, collate_fn=collater) #, batch_sampler=sampler_val)
+	dataloader_val = DataLoader(dataset_val, num_workers=1, collate_fn=collater, batch_sampler=sampler_val)
 
 	# retinanet = torch.load(parser.model)
 	retinanet = model.resnet50(num_classes=80)
