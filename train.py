@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import time
 
 import numpy as np
 import torch
@@ -65,8 +66,8 @@ def main(args=None):
         raise ValueError(
             'Dataset type not understood (must be csv or coco), exiting.')
 
-    sampler = AspectRatioBasedSampler(dataset_train, batch_size=2, drop_last=False)
-    dataloader_train = DataLoader(dataset_train, num_workers=3, collate_fn=collater, batch_sampler=sampler)
+    sampler = AspectRatioBasedSampler(dataset_train, batch_size=1, drop_last=False)
+    dataloader_train = DataLoader(dataset_train, num_workers=1, collate_fn=collater, batch_sampler=sampler)
 
     # What do these lines do? Can we we delete them?
     if dataset_val is not None:
@@ -98,38 +99,62 @@ def main(args=None):
 
     print('Num training images: {}'.format(len(dataset_train)))
 
+    training_start_time = time.time()
+    logs_file = open('logs_{}_resnet_{}.txt'.format(parser.dataset, parser.depth), 'w')
+
     for epoch_num in range(parser.epochs):
         retinanet.train()
         retinanet.module.freeze_bn()
 
         epoch_loss = []
+        epoch_start_time = time.time()
 
-        for iter_num, data in enumerate(dataloader_train):
-            try:
-                optimizer.zero_grad()
+        try:
+            for iter_num, data in enumerate(dataloader_train):
+                iteration_start_time = time.time()
 
-                classification_loss, regression_loss = retinanet([data['img'].cuda().float(), data['annot']])
-                classification_loss = classification_loss.mean()
-                regression_loss = regression_loss.mean()
+                try:
+                    optimizer.zero_grad()
 
-                loss = classification_loss + regression_loss
+                    classification_loss, regression_loss = retinanet([data['img'].cuda().float(), data['annot']])
+                    classification_loss = classification_loss.mean()
+                    regression_loss = regression_loss.mean()
 
-                if loss == 0:
+                    loss = classification_loss + regression_loss
+
+                    if loss == 0:
+                        continue
+
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
+                    optimizer.step()
+                    loss_hist.append(float(loss))
+                    epoch_loss.append(float(loss))
+
+                    # Logging
+                    actual_time = time.time()
+                    log = 'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} |' \
+                        'Running loss: {:1.5f} | Times: training: {:.3f}, epoch: {:.3f}, iteration: {:.3f}' \
+                        .format(epoch_num, iter_num, float(classification_loss), float(regression_loss),
+                                np.mean(loss_hist), actual_time - training_start_time,
+                                actual_time - epoch_start_time, actual_time - iteration_start_time)
+                    print(log)
+                    logs_file.write(log + '\n')
+
+                    if iter_num != 0 and iter_num % 999 == 0:
+                        torch.save(retinanet.module,
+                                   '{}_retinanet_unfinished_epoch_{}.pt'.format(parser.dataset, epoch_num))
+
+                    # Free memory
+                    del classification_loss
+                    del regression_loss
+                except Exception as exception:
+                    print(exception)
                     continue
-
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
-                optimizer.step()
-                loss_hist.append(float(loss))
-                epoch_loss.append(float(loss))
-                print('Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} |'
-                      'Running loss: {:1.5f}'.format(epoch_num, iter_num, float(classification_loss),
-                                                     float(regression_loss), np.mean(loss_hist)))
-                del classification_loss
-                del regression_loss
-            except Exception as e:
-                print(e)
-                continue
+        except Exception as exception:
+            # Exception for an error during loading the data, some images could be "truncated" and couldn't be loaded
+            print(exception)
+            continue
 
         if parser.dataset == 'coco':
             print('Evaluating dataset')
@@ -140,10 +165,11 @@ def main(args=None):
             mAP = csv_eval.evaluate(dataset_val, retinanet)
 
         scheduler.step(np.mean(epoch_loss))
-        torch.save(retinanet.module, '{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
+        torch.save(retinanet.module, '{}_retinanet_epoch_{}.pt'.format(parser.dataset, epoch_num))
 
     retinanet.eval()
     torch.save(retinanet, 'model_final_{}.pt'.format(epoch_num))
+    logs_file.close()
 
 
 if __name__ == '__main__':

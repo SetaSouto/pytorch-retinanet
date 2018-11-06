@@ -46,9 +46,9 @@ def main(args=None):
     sampler_val = AspectRatioBasedSampler(dataset_val, batch_size=1, drop_last=False)
     dataloader_val = DataLoader(dataset_val, num_workers=1, collate_fn=collater, batch_sampler=sampler_val)
 
-    # retinanet = torch.load(parser.model)
-    retinanet = model.resnet50(num_classes=80)
-    retinanet.load_state_dict(torch.load(parser.model))
+    retinanet = torch.load(parser.model)
+    # retinanet = model.resnet50(num_classes=80)
+    # retinanet.load_state_dict(torch.load(parser.model))
 
     use_gpu = True
 
@@ -71,7 +71,7 @@ def main(args=None):
             st = time.time()
             scores, classification, transformed_anchors = retinanet(data['img'].cuda().float())
             print('Elapsed time: {}'.format(time.time()-st))
-            idxs = np.where(scores > 0.5)
+            idxs = np.where(scores > 0.4)
             img = np.array(255 * unnormalize(data['img'][0, :, :, :])).copy()
 
             img[img < 0] = 0

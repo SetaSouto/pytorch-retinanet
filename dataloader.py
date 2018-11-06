@@ -22,8 +22,11 @@ class CocoDataset(Dataset):
 
     def __init__(self, root_dir, set_name='train2017', transform=None):
         """
+        Initialize the Dataset. Sets the directories ans files and load the classes.
+
         Args:
             root_dir (string): COCO directory.
+            set_name (string): The name of the set to be loaded.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
@@ -37,6 +40,13 @@ class CocoDataset(Dataset):
         self.load_classes()
 
     def load_classes(self):
+        """Load the classes and labels.
+
+        It sets the 'classes' attribute of the class that contains a dict to get
+        the label (number) of the class given the name (string) of it.
+        Also, adds the 'labels' attribute that is a dict but with the inverse proposit,
+        given a label (number) returns the class (string).
+        """
         # load class names (name -> label)
         categories = self.coco.loadCats(self.coco.getCatIds())
         categories.sort(key=lambda x: x['id'])
@@ -44,10 +54,10 @@ class CocoDataset(Dataset):
         self.classes = {}
         self.coco_labels = {}
         self.coco_labels_inverse = {}
-        for c in categories:
-            self.coco_labels[len(self.classes)] = c['id']
-            self.coco_labels_inverse[c['id']] = len(self.classes)
-            self.classes[c['name']] = len(self.classes)
+        for category in categories:
+            self.coco_labels[len(self.classes)] = category['id']
+            self.coco_labels_inverse[category['id']] = len(self.classes)
+            self.classes[category['name']] = len(self.classes)
 
         # also load the reverse (label -> name)
         self.labels = {}
@@ -58,7 +68,16 @@ class CocoDataset(Dataset):
         return len(self.image_ids)
 
     def __getitem__(self, idx):
+        """Get an item of the dataset given the index of it.
 
+        Load the image and annotations, apply the transformations (if there is any)
+        and returns the sample as a dict with 'img' and 'annot'.
+
+        Returns:
+            dict: Dictionary with 'img' and 'annot' fields. The 'img' field contains
+                the loaded image and the 'annot' field contains the annotations for
+                the image. Each one is a ndarray instance.
+        """
         img = self.load_image(idx)
         annot = self.load_annotations(idx)
         sample = {'img': img, 'annot': annot}
@@ -68,6 +87,14 @@ class CocoDataset(Dataset):
         return sample
 
     def load_image(self, image_index):
+        """Loads an image given the image_index.
+
+        Use the coco api to load the image's info to get its path and read the image
+        using skimage.
+
+        Returns:
+            np.ndarray: The image normalized by 255.
+        """
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
         path = os.path.join(self.root_dir, 'images', self.set_name, image_info['file_name'])
         img = skimage.io.imread(path)
@@ -78,6 +105,15 @@ class CocoDataset(Dataset):
         return img.astype(np.float32)/255.0
 
     def load_annotations(self, image_index):
+        """Load the annotations of a given image index.
+
+        Returns:
+            np.ndarray: An array with shape (number of annotations, 5).
+                The number of annotations depends on the image (and how many object it contains)
+                and the 5 represents the x1, y1, x2, y2 and the class.
+                The bounding box attributes are relative to the image and the class is the label
+                (i.e. number).
+        """
         # get ground truth annotations
         annotations_ids = self.coco.getAnnIds(imgIds=self.image_ids[image_index], iscrowd=False)
         annotations = np.zeros((0, 5))
