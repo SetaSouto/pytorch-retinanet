@@ -1,23 +1,20 @@
-from __future__ import print_function, division
-import sys
-import os
-import torch
-import numpy as np
-import random
+from __future__ import division, print_function
+
 import csv
+import os
+import random
+import sys
 
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
-from torch.utils.data.sampler import Sampler
-
-from pycocotools.coco import COCO
-
+import numpy as np
+import skimage
+import skimage.color
 import skimage.io
 import skimage.transform
-import skimage.color
-import skimage
-
+import torch
 from PIL import Image
+from pycocotools.coco import COCO
+from torch.utils.data import Dataset
+from torch.utils.data.sampler import Sampler
 
 
 class CocoDataset(Dataset):
@@ -34,7 +31,7 @@ class CocoDataset(Dataset):
         self.set_name = set_name
         self.transform = transform
 
-        self.coco      = COCO(os.path.join(self.root_dir, 'annotations', 'instances_' + self.set_name + '.json'))
+        self.coco = COCO(os.path.join(self.root_dir, 'annotations', 'instances_' + self.set_name + '.json'))
         self.image_ids = self.coco.getImgIds()
 
         self.load_classes()
@@ -44,8 +41,8 @@ class CocoDataset(Dataset):
         categories = self.coco.loadCats(self.coco.getCatIds())
         categories.sort(key=lambda x: x['id'])
 
-        self.classes             = {}
-        self.coco_labels         = {}
+        self.classes = {}
+        self.coco_labels = {}
         self.coco_labels_inverse = {}
         for c in categories:
             self.coco_labels[len(self.classes)] = c['id']
@@ -72,7 +69,7 @@ class CocoDataset(Dataset):
 
     def load_image(self, image_index):
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
-        path       = os.path.join(self.root_dir, 'images', self.set_name, image_info['file_name'])
+        path = os.path.join(self.root_dir, 'images', self.set_name, image_info['file_name'])
         img = skimage.io.imread(path)
 
         if len(img.shape) == 2:
@@ -83,7 +80,7 @@ class CocoDataset(Dataset):
     def load_annotations(self, image_index):
         # get ground truth annotations
         annotations_ids = self.coco.getAnnIds(imgIds=self.image_ids[image_index], iscrowd=False)
-        annotations     = np.zeros((0, 5))
+        annotations = np.zeros((0, 5))
 
         # some images appear to miss annotations (like image with id 257034)
         if len(annotations_ids) == 0:
@@ -97,10 +94,10 @@ class CocoDataset(Dataset):
             if a['bbox'][2] < 1 or a['bbox'][3] < 1:
                 continue
 
-            annotation        = np.zeros((1, 5))
+            annotation = np.zeros((1, 5))
             annotation[0, :4] = a['bbox']
-            annotation[0, 4]  = self.coco_label_to_label(a['category_id'])
-            annotations       = np.append(annotations, annotation, axis=0)
+            annotation[0, 4] = self.coco_label_to_label(a['category_id'])
+            annotations = np.append(annotations, annotation, axis=0)
 
         # transform from [x, y, w, h] to [x1, y1, x2, y2]
         annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
@@ -110,7 +107,6 @@ class CocoDataset(Dataset):
 
     def coco_label_to_label(self, coco_label):
         return self.coco_labels_inverse[coco_label]
-
 
     def label_to_coco_label(self, label):
         return self.coco_labels[label]
@@ -142,7 +138,7 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.class_list) as file:
                 self.classes = self.load_classes(csv.reader(file, delimiter=','))
         except ValueError as e:
-            raise_from(ValueError('invalid CSV class file: {}: {}'.format(self.class_list, e)), None)
+            raise ValueError('invalid CSV class file: {}: {}'.format(self.class_list, e))
 
         self.labels = {}
         for key, value in self.classes.items():
@@ -153,7 +149,7 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.train_file) as file:
                 self.image_data = self._read_annotations(csv.reader(file, delimiter=','), self.classes)
         except ValueError as e:
-            raise_from(ValueError('invalid CSV annotations file: {}: {}'.format(self.train_file, e)), None)
+            raise ValueError('invalid CSV annotations file: {}: {}'.format(self.train_file, e))
         self.image_names = list(self.image_data.keys())
 
     def _parse(self, value, function, fmt):
@@ -166,7 +162,7 @@ class CSVDataset(Dataset):
         try:
             return function(value)
         except ValueError as e:
-            raise_from(ValueError(fmt.format(e)), None)
+            raise ValueError(fmt.format(e))
 
     def _open_for_csv(self, path):
         """
@@ -179,7 +175,6 @@ class CSVDataset(Dataset):
         else:
             return open(path, 'r', newline='')
 
-
     def load_classes(self, csv_reader):
         result = {}
 
@@ -189,14 +184,13 @@ class CSVDataset(Dataset):
             try:
                 class_name, class_id = row
             except ValueError:
-                raise_from(ValueError('line {}: format should be \'class_name,class_id\''.format(line)), None)
+                raise ValueError('line {}: format should be \'class_name,class_id\''.format(line))
             class_id = self._parse(class_id, int, 'line {}: malformed class ID: {{}}'.format(line))
 
             if class_name in result:
                 raise ValueError('line {}: duplicate class name: \'{}\''.format(line, class_name))
             result[class_name] = class_id
         return result
-
 
     def __len__(self):
         return len(self.image_names)
@@ -222,7 +216,7 @@ class CSVDataset(Dataset):
     def load_annotations(self, image_index):
         # get ground truth annotations
         annotation_list = self.image_data[self.image_names[image_index]]
-        annotations     = np.zeros((0, 5))
+        annotations = np.zeros((0, 5))
 
         # some images appear to miss annotations (like image with id 257034)
         if len(annotation_list) == 0:
@@ -239,15 +233,15 @@ class CSVDataset(Dataset):
             if (x2-x1) < 1 or (y2-y1) < 1:
                 continue
 
-            annotation        = np.zeros((1, 5))
-            
+            annotation = np.zeros((1, 5))
+
             annotation[0, 0] = x1
             annotation[0, 1] = y1
             annotation[0, 2] = x2
             annotation[0, 3] = y2
 
-            annotation[0, 4]  = self.name_to_label(a['class'])
-            annotations       = np.append(annotations, annotation, axis=0)
+            annotation[0, 4] = self.name_to_label(a['class'])
+            annotations = np.append(annotations, annotation, axis=0)
 
         return annotations
 
@@ -259,7 +253,8 @@ class CSVDataset(Dataset):
             try:
                 img_file, x1, y1, x2, y2, class_name = row[:6]
             except ValueError:
-                raise_from(ValueError('line {}: format should be \'img_file,x1,y1,x2,y2,class_name\' or \'img_file,,,,,\''.format(line)), None)
+                raise ValueError("line {}: format should be 'img_file,x1,y1,x2,y2,class_name' or 'img_file'"
+                                 .format(line))
 
             if img_file not in result:
                 result[img_file] = []
@@ -305,7 +300,7 @@ def collater(data):
     imgs = [s['img'] for s in data]
     annots = [s['annot'] for s in data]
     scales = [s['scale'] for s in data]
-        
+
     widths = [int(s.shape[0]) for s in imgs]
     heights = [int(s.shape[1]) for s in imgs]
     batch_size = len(imgs)
@@ -320,23 +315,23 @@ def collater(data):
         padded_imgs[i, :int(img.shape[0]), :int(img.shape[1]), :] = img
 
     max_num_annots = max(annot.shape[0] for annot in annots)
-    
+
     if max_num_annots > 0:
 
         annot_padded = torch.ones((len(annots), max_num_annots, 5)) * -1
 
         if max_num_annots > 0:
             for idx, annot in enumerate(annots):
-                #print(annot.shape)
+                # print(annot.shape)
                 if annot.shape[0] > 0:
                     annot_padded[idx, :annot.shape[0], :] = annot
     else:
         annot_padded = torch.ones((len(annots), 1, 5)) * -1
 
-
     padded_imgs = padded_imgs.permute(0, 3, 1, 2)
 
     return {'img': padded_imgs, 'annot': annot_padded, 'scale': scales}
+
 
 class Resizer(object):
     """Convert ndarrays in sample to Tensors."""
@@ -362,8 +357,8 @@ class Resizer(object):
         image = skimage.transform.resize(image, (int(round(rows*scale)), int(round((cols*scale)))))
         rows, cols, cns = image.shape
 
-        pad_w = 32 - rows%32
-        pad_h = 32 - cols%32
+        pad_w = 32 - rows % 32
+        pad_h = 32 - cols % 32
 
         new_image = np.zeros((rows + pad_w, cols + pad_h, cns)).astype(np.float32)
         new_image[:rows, :cols, :] = image.astype(np.float32)
@@ -386,7 +381,7 @@ class Augmenter(object):
 
             x1 = annots[:, 0].copy()
             x2 = annots[:, 2].copy()
-            
+
             x_tmp = x1.copy()
 
             annots[:, 0] = cols - x2
@@ -407,7 +402,8 @@ class Normalizer(object):
 
         image, annots = sample['img'], sample['annot']
 
-        return {'img':((image.astype(np.float32)-self.mean)/self.std), 'annot': annots}
+        return {'img': ((image.astype(np.float32)-self.mean)/self.std), 'annot': annots}
+
 
 class UnNormalizer(object):
     def __init__(self, mean=None, std=None):
